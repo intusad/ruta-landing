@@ -1,65 +1,115 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="hr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RUTA COMMUNITY – Coming Soon</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RUTA Community – Prijava/Registracija</title>
   <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background-color: #121212;
-      color: #ffffff;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      flex-direction: column;
-      text-align: center;
-    }
-    h1 {
-      font-size: 3em;
-      margin-bottom: 0.2em;
-    }
-    p {
-      font-size: 1.2em;
-      max-width: 600px;
-    }
-    .highlight {
-      color: #ff3c00;
-      font-weight: bold;
-    }
-    .subscribe {
-      margin-top: 2em;
-    }
-    input[type="email"] {
-      padding: 0.5em;
-      width: 250px;
-      border: none;
-      border-radius: 4px;
-      margin-right: 0.5em;
-    }
-    button {
-      padding: 0.5em 1em;
-      border: none;
-      background-color: #ff3c00;
-      color: #ffffff;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    button:hover {
-      background-color: #e13800;
-    }
+    body{background:#0f0f12;color:#fff;font-family:system-ui,Arial;margin:0}
+    .wrap{max-width:520px;margin:60px auto;padding:0 16px}
+    .card{background:#15151b;border:1px solid #26262e;border-radius:16px;padding:24px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    h1{margin:0 0 8px;letter-spacing:.5px}
+    p.muted{opacity:.8;margin:0 0 18px}
+    input{width:100%;padding:12px 14px;border-radius:10px;border:1px solid #2a2a33;background:#0f0f12;color:#fff;outline:none;margin-bottom:10px}
+    .row{display:flex;gap:8px}
+    button{padding:10px 14px;border-radius:10px;font-weight:600;cursor:pointer}
+    .primary{background:#ff8800;color:#1b1b1f;border:1px solid #ff8800}
+    .ghost{background:transparent;color:#fff;border:1px solid #3a3a44}
+    .msg{margin-top:12px;opacity:.95;white-space:pre-wrap}
+    .ok{color:#8bffb0}.err{color:#ff9292}
+    .box{padding:10px;border:1px dashed #3a3a44;border-radius:10px;margin-top:12px}
   </style>
 </head>
 <body>
-  <h1>🚀 RUTA COMMUNITY</h1>
-  <p>The social network for motorcyclists. <span class="highlight">Where rides become stories.</span></p>
-  <p>💥 Coming soon to this domain.</p>
-  <div class="subscribe">
-    <input type="email" placeholder="Enter your email..." />
-    <button>Notify Me</button>
+  <div class="wrap">
+    <div class="card" id="auth-card" hidden>
+      <h1>RUTA COMMUNITY</h1>
+      <p class="muted">Registracija / Prijava</p>
+      <input id="email" type="email" placeholder="Email" />
+      <input id="pass" type="password" placeholder="Lozinka" />
+      <div class="row">
+        <button class="primary" id="btn-signup">Registracija</button>
+        <button class="ghost" id="btn-signin">Prijava</button>
+      </div>
+      <div class="msg" id="msg"></div>
+    </div>
+
+    <div class="card" id="session-card" hidden>
+      <h1>RUTA COMMUNITY</h1>
+      <div class="box">
+        <div>Ulogiran: <b id="who"></b></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="ghost" id="btn-signout">Odjava</button>
+      </div>
+      <p class="muted" style="margin-top:14px">
+        Profil se automatski upisuje u tablicu <code>profiles</code>.
+      </p>
+    </div>
   </div>
+
+  <!-- Supabase JS (ESM) -->
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+    const SUPABASE_URL = "https://bttktgkowyiyxcovijqj.supabase.co";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0dGt0Z2tvd2V5aXhjb3ZqbGpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc0OTI0OTIsImV4cCI6MjA2MzA2ODQ5Mn0.RXJ6iFbETESR5g-OvhKHH_ejCXiZHLORVqpIQHJkUyc";
+
+    const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+    const authCard = document.getElementById('auth-card');
+    const sessCard = document.getElementById('session-card');
+    const msg = document.getElementById('msg');
+    const who = document.getElementById('who');
+    const email = document.getElementById('email');
+    const pass = document.getElementById('pass');
+
+    function showAuth(){ authCard.hidden = false; sessCard.hidden = true; }
+    function showSess(){ authCard.hidden = true; sessCard.hidden = false; }
+
+    const boot = async () => {
+      const { data } = await sb.auth.getSession();
+      if (data.session?.user) {
+        who.textContent = data.session.user.email ?? '(bez emaila)';
+        showSess();
+      } else {
+        showAuth();
+      }
+    };
+
+    document.getElementById('btn-signup').onclick = async () => {
+      msg.textContent = '';
+      const { error } = await sb.auth.signUp({ email: email.value, password: pass.value });
+      if (error) msg.innerHTML = `<span class="err">${error.message}</span>`;
+      else msg.innerHTML = `<span class="ok">Registracija poslana. Ako je potvrda emaila uključena – provjeri inbox.</span>`;
+    };
+
+    document.getElementById('btn-signin').onclick = async () => {
+      msg.textContent = '';
+      const { error } = await sb.auth.signInWithPassword({ email: email.value, password: pass.value });
+      if (error) msg.innerHTML = `<span class="err">${error.message}</span>`;
+      else {
+        const { data } = await sb.auth.getSession();
+        who.textContent = data.session?.user?.email ?? '';
+        showSess();
+      }
+    };
+
+    document.getElementById('btn-signout').onclick = async () => {
+      await sb.auth.signOut();
+      showAuth();
+    };
+
+    sb.auth.onAuthStateChange((_e, session) => {
+      if (session?.user) {
+        who.textContent = session.user.email ?? '';
+        showSess();
+      } else {
+        showAuth();
+      }
+    });
+
+    boot();
+  </script>
 </body>
 </html>
