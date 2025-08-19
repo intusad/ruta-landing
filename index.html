@@ -18,6 +18,13 @@
     .msg{margin-top:12px;opacity:.95;white-space:pre-wrap}
     .ok{color:#8bffb0}.err{color:#ff9292}
     .box{padding:10px;border:1px dashed #3a3a44;border-radius:10px;margin-top:12px}
+    button:disabled{opacity:0.5;cursor:not-allowed}
+    @media (max-width: 600px) {
+      .wrap { margin: 20px auto; padding: 0 10px; }
+      .card { padding: 16px; }
+      .row { flex-direction: column; gap: 10px; }
+      button { width: 100%; }
+    }
   </style>
 </head>
 <body>
@@ -25,17 +32,21 @@
     <div class="card" id="auth-card" hidden>
       <h1>RUTA COMMUNITY</h1>
       <p class="muted">Registracija / Prijava</p>
+      <input id="username" type="text" placeholder="Korisničko ime" />
       <input id="email" type="email" placeholder="Email" />
       <input id="pass" type="password" placeholder="Lozinka" />
       <div class="row">
         <button class="primary" id="btn-signup">Registracija</button>
         <button class="ghost" id="btn-signin">Prijava</button>
       </div>
+      <div class="row" style="margin-top:8px">
+        <button class="ghost" id="btn-reset">Zaboravio sam lozinku</button>
+      </div>
       <div class="msg" id="msg"></div>
     </div>
 
     <div class="card" id="session-card" hidden>
-      <h1>RUTA COMMUNITY</h1>
+     <h1>RUTA COMMUNITY</h1>
       <div class="box">
         <div>Ulogiran: <b id="who"></b></div>
       </div>
@@ -48,7 +59,6 @@
     </div>
   </div>
 
-  <!-- Supabase JS (ESM) -->
   <script type="module">
     import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -63,35 +73,122 @@
     const who = document.getElementById('who');
     const email = document.getElementById('email');
     const pass = document.getElementById('pass');
+    const username = document.getElementById('username');
 
-    function showAuth(){ authCard.hidden = false; sessCard.hidden = true; }
-    function showSess(){ authCard.hidden = true; sessCard.hidden = false; }
+    const showAuth = () => { authCard.hidden = false; sessCard.hidden = true; };
+    const showSess = () => { authCard.hidden = true; sessCard.hidden = false; };
+    const setLoading = (isLoading) => {
+      document.getElementById('btn-signup').disabled = isLoading;
+      document.getElementById('btn-signin').disabled = isLoading;
+      document.getElementById('btn-reset').disabled = isLoading;
+    };
+
+    const validateInputs = () => {
+      if (!email.value) {
+        msg.innerHTML = `<span class="err">Unesi email adresu.</span>`;
+        return false;
+      }
+      if (!pass.value || pass.value.length < 6) {
+        msg.innerHTML = `<span class="err">Lozinka mora imati barem 6 znakova.</span>`;
+        return false;
+      }
+      return true;
+    };
+
+    const checkProfile = async (userId) => {
+      const { data, error } = await sb
+        .from('profiles')
+        .select('email, username')
+        .eq('id', userId)
+        .single();
+      if (error) console.error('Error fetching profile:', error);
+      return data;
+    };
 
     const boot = async () => {
-      const { data } = await sb.auth.getSession();
-      if (data.session?.user) {
-        who.textContent = data.session.user.email ?? '(bez emaila)';
-        showSess();
-      } else {
+      try {
+        const { data, error } = await sb.auth.getSession();
+        if (error) console.error(error);
+        if (data.session?.user) {
+          const profile = await checkProfile(data.session.user.id);
+          who.textContent = profile?.username || profile?.email || data.session.user.email || '(bez emaila)';
+          showSess();
+        } else {
+          showAuth();
+        }
+      } catch (e) {
+        console.error(e);
         showAuth();
       }
     };
 
     document.getElementById('btn-signup').onclick = async () => {
       msg.textContent = '';
-      const { error } = await sb.auth.signUp({ email: email.value, password: pass.value });
-      if (error) msg.innerHTML = `<span class="err">${error.message}</span>`;
-      else msg.innerHTML = `<span class="ok">Registracija poslana. Ako je potvrda emaila uključena – provjeri inbox.</span>`;
+      if (!validateInputs()) return;
+      if (!username.value) {
+        msg.innerHTML = `<span class="err">Unesi korisničko ime.</span>`;
+        return;
+      }
+      setLoading(true);
+      try {
+        const { data, error } = await sb.auth.signUp({
+          email: email.value,
+          password: pass.value,
+          options: { data: { username: username.value } }
+        });
+        if (error) msg.innerHTML = `<span class="err">${error.message}</span>`;
+        else {
+          await sb.from('profiles').upsert({
+            id: data.user.id,
+            email: email.value,
+            username: username.value
+          });
+          msg.innerHTML = `<span class="ok">Registracija poslana. Ako je potvrda emaila uključena – provjeri inbox.</span>`;
+        }
+      } catch (e) {
+        msg.innerHTML = `<span class="err">Failed to fetch (provjeri URL-ove u Authentication → URL Configuration).</span>`;
+      } finally {
+        setLoading(false);
+      }
     };
 
     document.getElementById('btn-signin').onclick = async () => {
       msg.textContent = '';
-      const { error } = await sb.auth.signInWithPassword({ email: email.value, password: pass.value });
-      if (error) msg.innerHTML = `<span class="err">${error.message}</span>`;
-      else {
-        const { data } = await sb.auth.getSession();
-        who.textContent = data.session?.user?.email ?? '';
-        showSess();
+      if (!validateInputs()) return;
+      setLoading(true);
+      try {
+        const { error } = await sb.auth.signInWithPassword({ email: email.value, password: pass.value });
+        if (error) msg.innerHTML = `<span class="err">${error.message}</span>`;
+        else {
+          const { data } = await sb.auth.getSession();
+          const profile = await checkProfile(data.session?.user?.id);
+          who.textContent = profile?.username || profile?.email || data.session?.user?.email || '';
+          showSess();
+        }
+      } catch (e) {
+        msg.innerHTML = `<span class="err">Failed to fetch (provjeri CORS/Redirect URLs u Supabase).</span>`;
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    document.getElementById('btn-reset').onclick = async () => {
+      msg.textContent = '';
+      if (!email.value) {
+        msg.innerHTML = `<span class="err">Unesi email adresu.</span>`;
+        return;
+      }
+      setLoading(true);
+      try {
+        const { error } = await sb.auth.resetPasswordForEmail(email.value, {
+          redirectTo: window.location.origin,
+        });
+        if (error) msg.innerHTML = `<span class="err">${error.message}</span>`;
+        else msg.innerHTML = `<span class="ok">Link za resetiranje lozinke poslan na email.</span>`;
+      } catch (e) {
+        msg.innerHTML = `<span class="err">Greška pri slanju zahtjeva.</span>`;
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -102,8 +199,10 @@
 
     sb.auth.onAuthStateChange((_e, session) => {
       if (session?.user) {
-        who.textContent = session.user.email ?? '';
-        showSess();
+        checkProfile(session.user.id).then(profile => {
+          who.textContent = profile?.username || profile?.email || session.user.email || '';
+          showSess();
+        });
       } else {
         showAuth();
       }
